@@ -23,14 +23,12 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog, messagebox, BOTH, X, LEFT, RIGHT, Y, BOTTOM, TOP, EW, NS
 from tkinter import Text, Scrollbar, StringVar, END
-
 try:
     import ttkbootstrap as tb
     from ttkbootstrap.constants import *
     BOOTSTRAP = True
 except ImportError:
     BOOTSTRAP = False
-
 try:
     import matplotlib.pyplot as plt
     from matplotlib.figure import Figure
@@ -53,6 +51,7 @@ MAX_BAR_TICKERS = 25
 STALE_THRESHOLD_MIN = 10
 CONCENTRATION_THRESHOLD_PCT = 25
 ZERO_PL_THRESHOLD = 0.05  # force |P/L| or value < this to 0.00
+
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # ────────────────────────────────────────────────
@@ -188,6 +187,7 @@ class Trading212Service:
         total_value = 0.0
         zero_pl_count = 0
         fallback_used = 0
+
         for pos in items:
             try:
                 instr = pos.get('instrument', {})
@@ -209,13 +209,11 @@ class Trading212Service:
                 else:
                     unrealised_pl = api_pl
 
-                # Fix tiny rounding artifacts (e.g. -0.01 → 0.00)
                 if abs(unrealised_pl) < ZERO_PL_THRESHOLD:
                     unrealised_pl = 0.0
                 if abs(est_value) < ZERO_PL_THRESHOLD:
                     est_value = 0.0
 
-                # Round all monetary values
                 est_value = round_money(est_value)
                 unrealised_pl = round_money(unrealised_pl)
                 total_cost = round_money(total_cost)
@@ -254,6 +252,7 @@ class Trading212Service:
         r.raise_for_status()
         data = r.json()
         print("[API Full cash response]", json.dumps(data, indent=2))
+
         keys = ['free', 'freeCash', 'cash', 'available']
         for k in keys:
             val = data.get(k)
@@ -261,6 +260,7 @@ class Trading212Service:
                 cash = safe_float(val)
                 print(f"[API] Parsed {k}: £{cash:.2f}")
                 return round_money(cash)
+
         print("[API] No valid cash key found, defaulting to 0.0")
         return 0.0
 
@@ -284,15 +284,19 @@ class Analytics:
                 'deposit_count': 0,
                 'ttm_dividends': 0.0,
             }
+
         fees = float(df['Fee'].sum()) if 'Fee' in df.columns else 0.0
         realised = float(df['Result'].sum()) if 'Result' in df.columns else 0.0
+
         deposit_mask = df['Type'].str.contains('deposit', case=False, na=False)
         deposits_sum = float(df.loc[deposit_mask, 'Total'].sum())
         deposit_count = int(deposit_mask.sum())
+
         holdings_value = sum(p.est_value for p in positions)
         total_assets = holdings_value + cash
         net_gain = total_assets - deposits_sum
         total_return_pct = (net_gain / deposits_sum * 100) if deposits_sum > 0 else 0.0
+
         ttm_dividends = 0.0
         if not df.empty and 'Date' in df.columns and 'Type' in df.columns and 'Result' in df.columns:
             one_year_ago = datetime.now() - timedelta(days=365)
@@ -302,6 +306,7 @@ class Analytics:
                 (df['Result'] > 0)
             ]['Result'].sum()
             ttm_dividends = float(recent_div)
+
         return {
             'total_assets': total_assets,
             'holdings_value': holdings_value,
@@ -321,7 +326,7 @@ class Trading212App:
     def __init__(self, root):
         self.root = root
         self.root.title(APP_NAME)
-        self.root.geometry("1700x1000")
+        self.root.state('zoomed')
         self.repo = TransactionsRepo()
         self.df = self.repo.load()
         self.creds = Secrets.load()
@@ -335,6 +340,7 @@ class Trading212App:
         self.MIN_REFRESH_GAP = 60
         self.cooldown_end_time = 0.0
         self.countdown_after_id = None
+
         self._setup_style()
         self._build_ui()
         self.refresh(async_fetch=True)
@@ -350,6 +356,7 @@ class Trading212App:
     def _build_ui(self):
         self.sidebar = ttk.Frame(self.root, width=220)
         self.sidebar.pack(side=LEFT, fill=Y, padx=(10, 0), pady=10)
+
         self.content = ttk.Frame(self.root)
         self.content.pack(side=LEFT, fill=BOTH, expand=True, padx=10, pady=10)
 
@@ -371,6 +378,7 @@ class Trading212App:
         self._build_analyst()
         self._build_settings()
         self._build_sidebar()
+
         self.switch_tab("Dashboard")
 
     def switch_tab(self, tab_name):
@@ -384,6 +392,7 @@ class Trading212App:
 
     def _build_sidebar(self):
         ttk.Label(self.sidebar, text=APP_NAME, font=('Segoe UI', 14, 'bold')).pack(pady=20, padx=10)
+
         menu_items = ["Dashboard", "Transactions", "Positions", "AI Analyst", "Settings"]
         self.menu_btns = {}
         for item in menu_items:
@@ -391,29 +400,55 @@ class Trading212App:
             btn = ttk.Button(self.sidebar, text=item, command=lambda t=item: self.switch_tab(t), bootstyle=bootstyle)
             btn.pack(fill=X, pady=4, padx=8)
             self.menu_btns[item] = btn
+
         ttk.Separator(self.sidebar).pack(fill=X, pady=15, padx=10)
         ttk.Button(self.sidebar, text="Refresh", bootstyle="info", command=lambda: self.refresh(True)).pack(fill=X, pady=4, padx=8)
         ttk.Button(self.sidebar, text="Import CSV", bootstyle="primary", command=self.import_csv).pack(fill=X, pady=4, padx=8)
+
         ttk.Separator(self.sidebar).pack(fill=X, pady=15, padx=10)
 
-        self.stats_frame = ttk.Frame(self.sidebar)
-        self.stats_frame.pack(fill=X, padx=10, pady=10)
+        # ── Stats: single-layer solid tiles with border + icons ─────────────────
+        stats_grid = ttk.Frame(self.sidebar)
+        stats_grid.pack(fill=X, padx=10, pady=8)
+        stats_grid.columnconfigure(0, weight=1)
+        stats_grid.columnconfigure(1, weight=1)
+
+        # Stat definitions with icons
         stats = [
-            ("# Positions", "—"),
-            ("Avg Position", "—"),
-            ("Cash %", "—"),
-            ("Total Deposits", "—"),
-            ("Deposits Count", "—"),
-            ("Last Refresh", "—"),
+            ("# Positions", "📊", "—"),
+            ("Avg Position", "💰", "—"),
+            ("Cash %", "💸", "—"),
+            ("Total Deposits", "🏦", "—"),
+            ("Deposits Count", "🔢", "—"),
+            ("Market Buys", "🛒", "—"),
+            ("Market Sells", "💵", "—"),
         ]
+
         self.stats_vars = {}
-        for label, default in stats:
-            f = ttk.Frame(self.stats_frame)
-            f.pack(fill=X, pady=4)
-            ttk.Label(f, text=label + ":", font=('Segoe UI', 11)).pack(anchor='w')
+
+        for i, (label_text, icon, default) in enumerate(stats):
+            # Single tile frame – one consistent background
+            if BOOTSTRAP:
+                tile = tb.Frame(stats_grid, bootstyle="dark", padding=10)
+                # You can change to "secondary", "info", "primary" etc. if you prefer a different shade
+            else:
+                tile = ttk.Frame(stats_grid, padding=10)
+                tile.configure(relief="solid", borderwidth=1, background="#2c2c40")  # solid dark slate
+
+            tile.grid(row=i//2, column=i%2, padx=6, pady=6, sticky='ew')
+
+            # Header row: icon + label
+            header = ttk.Frame(tile)
+            header.pack(fill=X, pady=(2, 0))
+
+            ttk.Label(header, text=icon, font=('Segoe UI', 13)).pack(side=LEFT, padx=(8, 6))
+            ttk.Label(header, text=label_text, font=('Segoe UI', 10)).pack(side=LEFT)
+
+            # Value below
             var = tk.StringVar(value=default)
-            ttk.Label(f, textvariable=var, font=('Segoe UI', 13, 'bold')).pack(anchor='w')
-            self.stats_vars[label] = var
+            ttk.Label(tile, textvariable=var, font=('Segoe UI', 12, 'bold'), anchor='center').pack(pady=(2, 6))
+
+            self.stats_vars[label_text] = var
 
         ttk.Separator(self.sidebar).pack(fill=X, pady=15, padx=10)
         ttk.Label(self.sidebar, text="Additional Features:", font=('Segoe UI', 11, 'bold')).pack(anchor='w', padx=10)
@@ -431,6 +466,7 @@ class Trading212App:
 
         cards_frame = ttk.Frame(main)
         cards_frame.pack(fill=X, pady=(0, 20))
+
         self.card_vars = {}
         self.card_frames = {}
         cards = [
@@ -449,6 +485,7 @@ class Trading212App:
             ttk.Label(card, textvariable=var, font=('Segoe UI', 26, 'bold'), foreground=color).pack(anchor='center', pady=8)
             self.card_vars[title] = var
             self.card_frames[title] = card
+
         cards_frame.columnconfigure((0,1,2), weight=1)
 
         self.warning_var = tk.StringVar(value="")
@@ -477,7 +514,6 @@ class Trading212App:
 
             self.canvas = FigureCanvasTkAgg(self.fig, master=chart_frame)
             self.canvas.get_tk_widget().pack(fill=BOTH, expand=True, padx=6, pady=6)
-            # Navigation toolbar intentionally NOT added → hidden
 
     def _set_total_return_text(self, text: str):
         if "Total Return" in self.card_vars:
@@ -519,12 +555,23 @@ class Trading212App:
                     self.auto_retry_scheduled = False
 
                     summary = Analytics.calculate(self.df, self.positions, self.cash_balance)
+
+                    buy_count = 0
+                    sell_count = 0
+                    if not self.df.empty:
+                        buy_mask = self.df['Type'].str.contains('buy', case=False, na=False)
+                        sell_mask = self.df['Type'].str.contains('sell', case=False, na=False)
+                        buy_count = int(buy_mask.sum())
+                        sell_count = int(sell_mask.sum())
+
                     tv = summary['total_assets']
                     num_pos = len([p for p in self.positions if p.quantity > 0])
                     avg_pos = tv / num_pos if num_pos > 0 else 0
                     cash_pct = (self.cash_balance / tv * 100) if tv > 0 else 0
+
                     zero_count = sum(1 for p in self.positions if p.unrealised_pl == 0)
                     status = f"Warning: {zero_count} zero P/L" if zero_count > len(self.positions)//2 else "OK"
+
                     self.last_refresh_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                     session_change_str = ""
@@ -534,14 +581,21 @@ class Trading212App:
                         session_change_str = f" {arrow} {change_pct:+.2f}%"
                     self.last_total_assets = tv
 
-                    self.root.after(0, lambda: self._render_dashboard(summary, num_pos, avg_pos, cash_pct, session_change_str))
+                    self.root.after(0, lambda: self._render_dashboard(
+                        summary, num_pos, avg_pos, cash_pct, session_change_str,
+                        buy_count=buy_count, sell_count=sell_count
+                    ))
+
                     self.root.after(0, lambda: self.refresh_label.config(
                         text=f"Last refresh: {self.last_refresh_str} | {status}",
                         foreground='lime' if "Warning" not in status else 'orange'
                     ))
+
                     self.root.after(0, self._render_positions)
                     self.root.after(0, self.render_transactions)
+
                     print("=== Refresh completed successfully ===")
+
                 else:
                     self.auto_retry_scheduled = True
                     self.root.after(0, lambda: self._set_total_return_text("Fetch error – retrying in 60s..."))
@@ -570,7 +624,8 @@ class Trading212App:
         else:
             _task()
 
-    def _render_dashboard(self, s: Dict, num_pos: int, avg_pos: float, cash_pct: float, session_change_str: str = ""):
+    def _render_dashboard(self, s: Dict, num_pos: int, avg_pos: float, cash_pct: float,
+                          session_change_str: str = "", buy_count: int = 0, sell_count: int = 0):
         self.card_vars["Portfolio Value"].set(f"£{round_money(s['total_assets']):,.2f}")
         self.card_vars["Cash Available"].set(f"£{round_money(self.cash_balance):,.2f} ({cash_pct:.1f}%)")
 
@@ -602,7 +657,8 @@ class Trading212App:
         self.stats_vars["Cash %"].set(f"{cash_pct:.1f}%")
         self.stats_vars["Total Deposits"].set(f"£{round_money(s['deposits']):,.0f}")
         self.stats_vars["Deposits Count"].set(f"{s.get('deposit_count', 0):,d}")
-        self.stats_vars["Last Refresh"].set(self.last_refresh_str)
+        self.stats_vars["Market Buys"].set(f"{buy_count:,d}")
+        self.stats_vars["Market Sells"].set(f"{sell_count:,d}")
 
         warnings = []
         minutes_ago = (time.time() - self.last_successful_refresh) / 60 if self.last_successful_refresh > 0 else 999
@@ -618,6 +674,7 @@ class Trading212App:
         if MATPLOTLIB and self.positions:
             self.ax1.clear()
             self.ax2.clear()
+
             active = [p for p in self.positions if p.est_value > 0]
             sorted_active = sorted(active, key=lambda x: -x.est_value)
             n = len(sorted_active)
@@ -661,9 +718,11 @@ class Trading212App:
         path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
         if not path:
             return
+
         try:
             raw = pd.read_csv(path)
             raw.columns = raw.columns.str.strip().str.lower()
+
             mapping = {
                 'time': 'Date', 'action': 'Type', 'ticker': 'Ticker',
                 'no. of shares': 'Quantity', 'price / share': 'Price',
@@ -671,78 +730,102 @@ class Trading212App:
                 'currency (total)': 'Currency', 'notes': 'Note', 'name': 'Instrument Name',
                 'id': 'Reference'
             }
+
             df_new = pd.DataFrame()
             for old, new in mapping.items():
                 candidates = [c for c in raw.columns if old.lower() in c.lower()]
                 if candidates:
                     df_new[new] = raw[candidates[0]]
+
             fee_cols = [c for c in raw.columns if any(k in c.lower() for k in ['fee', 'tax', 'stamp', 'conversion'])]
             df_new['Fee'] = raw[fee_cols].sum(axis=1, numeric_only=True).fillna(0) if fee_cols else 0.0
+
             df_new['Type'] = df_new.get('Type', '').replace({
                 'market buy': 'Buy', 'buy': 'Buy',
                 'market sell': 'Sell', 'sell': 'Sell',
                 'deposit': 'Deposit', 'withdrawal': 'Withdrawal',
                 'dividend': 'Dividend'
             }, regex=True)
+
             df_new['Date'] = pd.to_datetime(df_new.get('Date'), errors='coerce')
+
             for col in ['Quantity', 'Price', 'Total', 'Fee', 'Result', 'FX_Rate']:
                 if col in df_new.columns:
                     df_new[col] = pd.to_numeric(df_new[col], errors='coerce').fillna(0)
+
             df_new = df_new.reindex(columns=['Date','Type','Ticker','Quantity','Price','Total',
                                              'Fee','Result','FX_Rate','Currency','Note','Reference'])
+
             for c in ['Date', 'Type', 'Ticker', 'Quantity', 'Total', 'Reference', 'Note']:
                 if c not in df_new.columns:
                     df_new[c] = pd.NA
+
             dedup_cols = ['Date', 'Type', 'Ticker', 'Quantity', 'Price', 'Total', 'Fee', 'Reference']
             dedup_cols = [c for c in dedup_cols if c in df_new.columns]
+
             existing = self.df.copy()
             if 'Date' in existing.columns:
                 existing['Date'] = pd.to_datetime(existing['Date'], errors='coerce')
+
             if not existing.empty and dedup_cols:
                 merged_check = pd.merge(df_new, existing[dedup_cols],
                                        how='left', on=dedup_cols, indicator=True)
                 new_rows = merged_check[merged_check['_merge'] == 'left_only'].drop(columns='_merge')
             else:
                 new_rows = df_new.copy()
+
             if new_rows.empty:
                 messagebox.showinfo("Import", "No new transactions found.")
                 return
+
             self.df = pd.concat([self.df, new_rows], ignore_index=True)
             self.df = self.repo.deduplicate(self.df.fillna({'Ticker':'-','Note':''}))
             self.df = self.df.sort_values('Date', ascending=False).reset_index(drop=True)
             self.repo.save(self.df)
+
             self.render_transactions()
+
             added_count = len(new_rows)
             total_count = len(self.df)
             messagebox.showinfo("Import Complete", f"Added {added_count} new rows.\nTotal transactions now: {total_count}")
+
             self.refresh(async_fetch=True)
+
         except Exception as e:
             messagebox.showerror("CSV Error", f"Failed to import:\n{str(e)}")
 
     def _build_transactions(self):
         filter_bar = ttk.Frame(self.tab_transactions)
         filter_bar.pack(fill=X, pady=(0,8))
+
         ttk.Label(filter_bar, text="Filter:").pack(side=LEFT, padx=8)
         self.tx_filter_var = StringVar()
         ttk.Entry(filter_bar, textvariable=self.tx_filter_var, width=45).pack(side=LEFT, padx=6)
         self.tx_filter_var.trace('w', lambda *args: self.render_transactions())
+
         tree_frame = ttk.Frame(self.tab_transactions)
         tree_frame.pack(fill=BOTH, expand=True, padx=5, pady=5)
+
         cols = ["Date", "Type", "Ticker", "Quantity", "Price", "Total", "Fee", "Result", "Note"]
         self.tree_tx = ttk.Treeview(tree_frame, columns=cols, show='headings')
+
         for c in cols:
             self.tree_tx.heading(c, text=c, command=lambda col=c: self._sort_tree(self.tree_tx, col, False))
             anchor = 'w' if c in ["Date", "Type", "Ticker", "Note"] else 'e'
             width = 160 if c in ["Date", "Note"] else 110
             self.tree_tx.column(c, width=width, anchor=anchor, stretch=True)
+
         vsb = ttk.Scrollbar(tree_frame, orient=VERTICAL, command=self.tree_tx.yview)
         hsb = ttk.Scrollbar(tree_frame, orient=HORIZONTAL, command=self.tree_tx.xview)
         self.tree_tx.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
         self.tree_tx.grid(row=0, column=0, sticky='nsew')
         vsb.grid(row=0, column=1, sticky='ns')
         hsb.grid(row=1, column=0, sticky='ew')
+
         tree_frame.columnconfigure(0, weight=1)
         tree_frame.rowconfigure(0, weight=1)
+
         self.tree_tx.tag_configure('even', background='#222233')
         self.tree_tx.tag_configure('odd', background='#1a1a2a')
         self.tree_tx.tag_configure('highlight', background='#3a3a55')
@@ -750,10 +833,12 @@ class Trading212App:
         self.tree_tx.tag_configure('sell', foreground='#EF5350')
         self.tree_tx.tag_configure('dividend', foreground='#FFCA28')
         self.tree_tx.tag_configure('total', font=('Segoe UI', 10, 'bold'), foreground='#BB86FC')
+
         self.render_transactions()
 
     def render_transactions(self):
         self.tree_tx.delete(*self.tree_tx.get_children(''))
+
         filter_text = self.tx_filter_var.get().lower().strip()
         if not filter_text:
             rows_to_show = self.df.iterrows()
@@ -762,6 +847,7 @@ class Trading212App:
                 (idx, row) for idx, row in self.df.iterrows()
                 if filter_text in ' '.join(str(v).lower() for v in row)
             ]
+
         for idx, (_, row) in enumerate(rows_to_show):
             values = [row.get(c, '') for c in self.tree_tx['columns']]
             tags = ['even' if idx % 2 == 0 else 'odd']
@@ -773,6 +859,7 @@ class Trading212App:
             elif 'dividend' in ttype:
                 tags.append('dividend')
             self.tree_tx.insert('', 'end', values=values, tags=tags)
+
         if not self.df.empty:
             totals = [
                 "TOTAL",
@@ -799,39 +886,50 @@ class Trading212App:
     def _build_positions(self):
         frame = ttk.Frame(self.tab_positions, padding=12)
         frame.pack(fill=BOTH, expand=True)
+
         cols = ["Ticker", "Qty", "Avg Price", "Current", "Value", "Unreal. P/L", "Cost", "% Portfolio"]
         self.tree_pos = ttk.Treeview(frame, columns=cols, show='headings')
+
         for c in cols:
             self.tree_pos.heading(c, text=c, command=lambda col=c: self._sort_tree(self.tree_pos, col, False))
             anchor = 'w' if c == "Ticker" else 'e'
             width = 140 if c in ["Value", "Unreal. P/L", "Cost"] else 100
             self.tree_pos.column(c, width=width, anchor=anchor)
+
         vsb = ttk.Scrollbar(frame, orient=VERTICAL, command=self.tree_pos.yview)
         hsb = ttk.Scrollbar(frame, orient=HORIZONTAL, command=self.tree_pos.xview)
         self.tree_pos.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
         self.tree_pos.grid(row=0, column=0, sticky='nsew')
         vsb.grid(row=0, column=1, sticky='ns')
         hsb.grid(row=1, column=0, sticky='ew')
+
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
+
         self.tree_pos.tag_configure('even', background='#222233')
         self.tree_pos.tag_configure('odd', background='#1a1a2a')
         self.tree_pos.tag_configure('profit', foreground='#66BB6A')
         self.tree_pos.tag_configure('loss', foreground='#EF5350')
         self.tree_pos.tag_configure('total', font=('Segoe UI', 10, 'bold'), foreground='#BB86FC')
+
         self._render_positions()
 
     def _render_positions(self):
         self.tree_pos.delete(*self.tree_pos.get_children(''))
+
         sorted_pos = sorted(self.positions, key=lambda x: -x.est_value if x.quantity > 0 else 0)
+
         total_value = sum(p.est_value for p in sorted_pos)
         total_pl = sum(p.unrealised_pl for p in sorted_pos)
         total_cost = sum(p.total_cost for p in sorted_pos)
+
         for idx, p in enumerate(sorted_pos):
             if p.quantity <= 0:
                 continue
             tags = ['profit' if p.unrealised_pl >= 0 else 'loss']
             tags.append('even' if idx % 2 == 0 else 'odd')
+
             vals = (
                 p.ticker,
                 f"{p.quantity:,.4f}",
@@ -843,21 +941,28 @@ class Trading212App:
                 f"{p.portfolio_pct:.1f}%"
             )
             self.tree_pos.insert('', 'end', values=vals, tags=tags)
-        footer = ("TOTAL", "", "", "", f"£{round_money(total_value):,.2f}", f"£{round_money(total_pl):+,.2f}", f"£{round_money(total_cost):,.2f}", "100.0%")
+
+        footer = ("TOTAL", "", "", "", f"£{round_money(total_value):,.2f}",
+                  f"£{round_money(total_pl):+,.2f}", f"£{round_money(total_cost):,.2f}", "100.0%")
         self.tree_pos.insert('', 'end', values=footer, tags=('total',))
 
     def _build_analyst(self):
         f = ttk.Frame(self.tab_analyst, padding=20)
         f.pack(fill=BOTH, expand=True)
+
         ttk.Label(f, text="AI Analyst – Using Trading 212 Live Data", font=('Segoe UI', 14, 'bold')).pack(pady=10)
         ttk.Label(f, text="No external calls → fast & no rate limits", foreground='green').pack()
         ttk.Label(f, text="VERY BASIC insights – NOT financial advice – Educational only", foreground='orange').pack(pady=5)
+
         btn_frame = ttk.Frame(f)
         btn_frame.pack(fill=X, pady=10)
+
         ttk.Button(btn_frame, text="Analyze My Positions", bootstyle="primary", command=self.run_analyst).pack(side=LEFT, padx=10)
         ttk.Button(btn_frame, text="Clear", bootstyle="secondary", command=lambda: self.analyst_output.delete(1.0, tk.END)).pack(side=LEFT)
+
         self.analyst_output = tk.Text(f, wrap='word', font=('Consolas', 11), height=25)
         self.analyst_output.pack(fill=BOTH, expand=True, padx=5, pady=5)
+
         sb = tk.Scrollbar(f, command=self.analyst_output.yview)
         sb.pack(side=RIGHT, fill=Y)
         self.analyst_output.config(yscrollcommand=sb.set)
@@ -866,20 +971,26 @@ class Trading212App:
         if not self.positions:
             messagebox.showinfo("No Positions", "No positions loaded. Please refresh first.")
             return
+
         self.analyst_output.delete(1.0, tk.END)
         self.analyst_output.insert(tk.END, "Quick analysis using your live Trading 212 data...\n\n")
+
         total_value = sum(p.est_value for p in self.positions)
         total_unreal_pl = sum(p.unrealised_pl for p in self.positions)
+
         self.analyst_output.insert(tk.END, f"Portfolio snapshot:\n")
         self.analyst_output.insert(tk.END, f" Total value: £{round_money(total_value):,.2f}\n")
         self.analyst_output.insert(tk.END, f" Unrealised P/L: £{round_money(total_unreal_pl):+,.2f}\n\n")
+
         for p in sorted(self.positions, key=lambda x: -x.est_value):
             if p.quantity <= 0:
                 continue
             price_change_pct = ((p.current_price / p.avg_price) - 1) * 100 if p.avg_price > 0 else 0
             pl_pct = (p.unrealised_pl / p.total_cost * 100) if p.total_cost > 0 else 0
+
             status = "BREAKEVEN" if abs(price_change_pct) < 0.5 else \
                      "IN PROFIT" if price_change_pct > 0 else "IN LOSS"
+
             comment = ""
             if price_change_pct > 40: comment = "Very strong unrealised gain → many consider taking partial profits"
             elif price_change_pct > 15: comment = "Good profit → often hold, but watch for reversal"
@@ -887,27 +998,34 @@ class Trading212App:
             elif price_change_pct < -40: comment = "Significant loss → review whether to cut or average down"
             elif price_change_pct < -15: comment = "Notable loss → review thesis"
             else: comment = "Minor movement → typically hold"
+
             block = f"[{p.ticker.upper()}] {p.quantity:,.3f} shares\n"
             block += f" Current: £{round_money(p.current_price):,.3f} Avg: £{round_money(p.avg_price):,.3f}\n"
             block += f" Change: {price_change_pct:+.1f}% P/L: £{round_money(p.unrealised_pl):+,.2f} ({pl_pct:+.1f}%)\n"
             block += f" Value: £{round_money(p.est_value):,.2f} ({p.portfolio_pct:.1f}%)\n"
             block += f" Status: {status} Thought: {comment}\n"
             block += "─" * 70 + "\n\n"
+
             self.analyst_output.insert(tk.END, block)
+
         self.analyst_output.insert(tk.END, "═"*80 + "\nNOT investment advice. Always do your own research.\n")
         self.analyst_output.see(tk.END)
 
     def _build_settings(self):
         f = ttk.Frame(self.tab_settings, padding=30)
         f.pack(fill=BOTH, expand=True)
+
         ttk.Label(f, text="API Key").grid(row=0, column=0, sticky='e', pady=8, padx=10)
         self.api_key_var = tk.StringVar(value=self.creds.key)
         ttk.Entry(f, textvariable=self.api_key_var, width=55).grid(row=0, column=1, pady=8)
+
         ttk.Label(f, text="API Secret").grid(row=1, column=0, sticky='e', pady=8, padx=10)
         self.api_secret_var = tk.StringVar(value=self.creds.secret)
         ttk.Entry(f, textvariable=self.api_secret_var, width=55, show="*").grid(row=1, column=1, pady=8)
+
         btn_frame = ttk.Frame(f)
         btn_frame.grid(row=2, column=1, pady=20, sticky='e')
+
         ttk.Button(btn_frame, text="Save Credentials", bootstyle="success", command=self.save_credentials).pack(side=LEFT, padx=8)
         ttk.Button(btn_frame, text="Clear Cache", bootstyle="warning", command=self.clear_cache).pack(side=LEFT, padx=8)
         ttk.Button(btn_frame, text="Clear Transactions", bootstyle="danger", command=self.clear_transactions).pack(side=LEFT, padx=8)
@@ -939,6 +1057,7 @@ class Trading212App:
             data = r.json()
             with open(os.path.join(DATA_DIR, 'api_debug.json'), 'w') as f:
                 json.dump(data, f, indent=2)
+
             summary = [f"{pos.get('instrument',{}).get('ticker','N/A')}: P/L {pos.get('walletImpact',{}).get('unrealizedProfitLoss','N/A')}" for pos in data[:8]]
             msg = f"Saved to data/api_debug.json\n\nSample:\n" + "\n".join(summary)
             if len(data) > 8: msg += f"\n... +{len(data)-8} more"
@@ -950,4 +1069,3 @@ if __name__ == '__main__':
     root = tb.Window(themename="darkly") if BOOTSTRAP else tk.Tk()
     app = Trading212App(root)
     root.mainloop()
-
