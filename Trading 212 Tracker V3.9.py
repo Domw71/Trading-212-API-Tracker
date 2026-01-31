@@ -33,7 +33,7 @@ except ImportError:
 
 try:
     import matplotlib.pyplot as plt
-    from matplotlib.figure import Figure                  # ← FIXED: this was missing
+    from matplotlib.figure import Figure
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
     MATPLOTLIB = True
 except ImportError:
@@ -950,3 +950,4 @@ if __name__ == '__main__':
     root = tb.Window(themename="darkly") if BOOTSTRAP else tk.Tk()
     app = Trading212App(root)
     root.mainloop()
+
