@@ -368,7 +368,7 @@ class Trading212App:
         self.tab_positions = ttk.Frame(self.content)
         self.tabs["Positions"] = self.tab_positions
         self.tab_analyst = ttk.Frame(self.content)
-        self.tabs["AI Analyst"] = self.tab_analyst
+        self.tabs["Analyst"] = self.tab_analyst
         self.tab_settings = ttk.Frame(self.content)
         self.tabs["Settings"] = self.tab_settings
 
@@ -393,7 +393,7 @@ class Trading212App:
     def _build_sidebar(self):
         ttk.Label(self.sidebar, text=APP_NAME, font=('Segoe UI', 14, 'bold')).pack(pady=20, padx=10)
 
-        menu_items = ["Dashboard", "Transactions", "Positions", "AI Analyst", "Settings"]
+        menu_items = ["Dashboard", "Transactions", "Positions", "Analyst", "Settings"]
         self.menu_btns = {}
         for item in menu_items:
             bootstyle = "secondary" if BOOTSTRAP else ""
@@ -950,7 +950,7 @@ class Trading212App:
         f = ttk.Frame(self.tab_analyst, padding=20)
         f.pack(fill=BOTH, expand=True)
 
-        ttk.Label(f, text="AI Analyst – Using Trading 212 Live Data", font=('Segoe UI', 14, 'bold')).pack(pady=10)
+        ttk.Label(f, text="Analyst – Using Trading 212 Live Data", font=('Segoe UI', 14, 'bold')).pack(pady=10)
         ttk.Label(f, text="No external calls → fast & no rate limits", foreground='green').pack()
         ttk.Label(f, text="VERY BASIC insights – NOT financial advice – Educational only", foreground='orange').pack(pady=5)
 
@@ -1069,3 +1069,4 @@ if __name__ == '__main__':
     root = tb.Window(themename="darkly") if BOOTSTRAP else tk.Tk()
     app = Trading212App(root)
     root.mainloop()
+
