@@ -55,7 +55,7 @@ except ImportError:
 # ────────────────────────────────────────────────
 # CONFIG
 # ────────────────────────────────────────────────
-APP_NAME = "Trading212 Portfolio Pro v4.7 (REV: 28)"
+APP_NAME = "Trading212 Portfolio Pro v4.7 (REV: 30)"
 DATA_DIR = "data"
 CSV_FILE = os.path.join(DATA_DIR, "transactions.csv")
 CACHE_FILE = os.path.join(DATA_DIR, "positions_cache.json")
@@ -1179,46 +1179,87 @@ class Trading212App:
     def _build_notes(self):
         frame = ttk.Frame(self.tab_notes, padding=12)
         frame.pack(fill=BOTH, expand=True)
+
+        # Toolbar (unchanged - your original toolbar code)
         toolbar = ttk.Frame(frame)
         toolbar.pack(fill=X, pady=(0, 8))
+
         fonts = ['Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Verdana', 'Georgia']
         font_var = tk.StringVar(value='Arial')
         font_menu = ttk.OptionMenu(toolbar, font_var, 'Arial', *fonts, command=lambda f: self.change_font_family(f))
         font_menu.pack(side=LEFT, padx=4)
+
         sizes = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72]
         size_var = tk.StringVar(value='12')
         size_menu = ttk.OptionMenu(toolbar, size_var, '12', *[str(s) for s in sizes], command=lambda s: self.change_font_size(int(s)))
         size_menu.pack(side=LEFT, padx=4)
+
         bold_btn = ttk.Button(toolbar, text="B", width=4, command=lambda: self.toggle_tag('bold'))
         bold_btn.pack(side=LEFT, padx=2)
+
         italic_btn = ttk.Button(toolbar, text="I", width=4, command=lambda: self.toggle_tag('italic'))
         italic_btn.pack(side=LEFT, padx=2)
+
         underline_btn = ttk.Button(toolbar, text="U", width=4, command=lambda: self.toggle_tag('underline'))
         underline_btn.pack(side=LEFT, padx=2)
+
         color_btn = ttk.Button(toolbar, text="Color", width=6, command=self.choose_color)
         color_btn.pack(side=LEFT, padx=4)
+
         align_left = ttk.Button(toolbar, text="Left", width=6, command=lambda: self.set_alignment('left'))
         align_left.pack(side=LEFT, padx=2)
+
         align_center = ttk.Button(toolbar, text="Center", width=6, command=lambda: self.set_alignment('center'))
         align_center.pack(side=LEFT, padx=2)
+
         align_right = ttk.Button(toolbar, text="Right", width=6, command=lambda: self.set_alignment('right'))
         align_right.pack(side=LEFT, padx=2)
+
         bullet_btn = ttk.Button(toolbar, text="• Bullet", width=8, command=self.insert_bullet)
         bullet_btn.pack(side=LEFT, padx=4)
+
         save_btn = ttk.Button(toolbar, text="Save Notes", bootstyle="success", command=self.save_notes)
         save_btn.pack(side=RIGHT, padx=4)
+
         load_btn = ttk.Button(toolbar, text="Load Notes", bootstyle="info", command=self.load_notes)
         load_btn.pack(side=RIGHT, padx=4)
-        self.notes_text = tk.Text(frame, wrap='word', font=('Arial', 12), undo=True, bg='#1e1e2f', fg='white', insertbackground='white')
-        self.notes_text.pack(fill=BOTH, expand=True)
-        scroll = ttk.Scrollbar(frame, orient='vertical', command=self.notes_text.yview)
-        scroll.pack(side=RIGHT, fill=Y)
-        self.notes_text.configure(yscrollcommand=scroll.set)
-        self.notes_text.tag_configure('bold', font=('Arial', 12, 'bold'))
-        self.notes_text.tag_configure('italic', font=('Arial', 12, 'italic'))
-        self.notes_text.tag_configure('underline', underline=True)
-        self.load_notes(silent=True)
 
+        # ──── Text area + vertical scrollbar ────
+        text_container = ttk.Frame(frame)
+        text_container.pack(fill=BOTH, expand=True)
+
+        # Make column 0 (text) expand, column 1 (scrollbar) stay narrow
+        text_container.columnconfigure(0, weight=1)
+        text_container.rowconfigure(0, weight=1)
+
+        # Text widget
+        self.notes_text = tk.Text(
+            text_container,
+            wrap='word',
+            font=('Arial', 12),
+            undo=True,
+            bg='#1e1e2f',
+            fg='white',
+            insertbackground='white'
+        )
+        self.notes_text.grid(row=0, column=0, sticky='nsew', padx=(0, 4))
+
+        # Vertical scrollbar on the right
+        scroll_y = ttk.Scrollbar(text_container, orient='vertical', command=self.notes_text.yview)
+        scroll_y.grid(row=0, column=1, sticky='ns')
+
+        # Connect scrollbar ↔ text widget
+        self.notes_text.configure(yscrollcommand=scroll_y.set)
+
+        # Optional: if you ever want horizontal scrolling (e.g. disable word wrap)
+        # scroll_x = ttk.Scrollbar(frame, orient='horizontal', command=self.notes_text.xview)
+        # scroll_x.pack(side=BOTTOM, fill=X)
+        # self.notes_text.configure(xscrollcommand=scroll_x.set)
+        # self.notes_text.config(wrap='none')
+
+        # Load any saved notes
+        self.load_notes(silent=True)
+        
     def change_font_family(self, family):
         try:
             current_font = tkfont.Font(font=self.notes_text.cget("font"))
@@ -1605,4 +1646,3 @@ if __name__ == '__main__':
     root = tb.Window(themename="darkly") if BOOTSTRAP else tk.Tk()
     app = Trading212App(root)
     root.mainloop()
-
