@@ -940,53 +940,95 @@ class Trading212App:
             )
         
     # ────────────────────────────────────────────────
-    # HELPER – SMART P/L FORMATTING
+    # HELPERS – FORMATTING
     # ────────────────────────────────────────────────
-    def smart_pnl_label(self, val: float) -> str:
-        """
-        Always show two decimal places — never rounds away small differences
-        """
+    def format_money(self, val: float, decimals: int = 2, force_sign: bool = False) -> str:
+        """General money formatter – used for values, P/L, etc."""
         if abs(val) < 0.005:
             return "£0.00"
-        return f"£{val:+,.2f}"
+        
+        abs_val = abs(val)
+        fmt = f"£{abs_val:,.{decimals}f}"
+        
+        if val > 0:
+            return f"+{fmt}" if force_sign else fmt
+        elif val < 0:
+            return f"-{fmt}"
+        else:
+            return fmt
+
+
+    def format_pct(self, pct: float, decimals: int = 1, always_show_sign: bool = False) -> str:
+        """Percentage formatter – clean or with forced sign"""
+        if abs(pct) < 0.05:
+            return "0.0%"
+        
+        abs_pct = abs(pct)
+        fmt = f"{abs_pct:.{decimals}f}%"
+        
+        if pct > 0:
+            return f"+{fmt}" if always_show_sign else fmt
+        elif pct < 0:
+            return f"-{fmt}"
+        else:
+            return fmt
+
+
+    # You can rename smart_pnl_label → format_pnl if you want
+    # This one is now just an alias to format_money (more consistent naming)
+    def smart_pnl_label(self, val: float, force_sign: bool = False) -> str:
+        return self.format_money(val, decimals=2, force_sign=force_sign)
+
 
     # ────────────────────────────────────────────────
-    # DASHBOARD RENDERING – FIXED LABELS
+    # DASHBOARD RENDERING
     # ────────────────────────────────────────────────
     def _render_dashboard(self, s: Dict, num_pos: int, avg_pos: float, cash_pct: float,
                          session_change_str: str = "", buy_count: int = 0, sell_count: int = 0,
                          net_gain: float = 0.0):
         """
-        Renders the main dashboard with four-panel layout:
-        1. Position values (with return % labels)
-        2. Top allocation (horizontal bars)
-        3. Top winners
-        4. Top losers
+        Renders the main dashboard with four-panel layout
         """
-        # ── Update KPI cards (unchanged)
-        self.card_vars["Portfolio Value"].set(f"£{round_money(s['holdings_value']):,.2f}")
-        self.card_vars["Cash Available"].set(f"£{round_money(self.cash_balance):,.2f} ({cash_pct:.1f}%)")
+        # ── KPI cards
+        self.card_vars["Portfolio Value"].set(
+            f"£{round_money(s['holdings_value']):,.2f}"   # no sign
+        )
+        
+        self.card_vars["Cash Available"].set(
+            f"£{round_money(self.cash_balance):,.2f} ({cash_pct:.1f}%)"
+        )
         
         gain = s['net_gain']
         pct = s['total_return_pct']
-        sign_g = "+" if gain >= 0 else ""
-        sign_p = "+" if pct >= 0 else ""
-        ret_text = f"{sign_g}£{round_money(gain):,.2f} ({sign_p}{pct:.2f}%){session_change_str}"
-        self.card_vars["Total Return"].set(ret_text)
-
+        
+        # Total Return – shows sign only on negative (clean)
+        self.card_vars["Total Return"].set(
+            f"{self.format_money(gain)} "
+            f"({self.format_pct(pct, decimals=2)}){session_change_str}"
+        )
+        
         if BOOTSTRAP and "Total Return" in self.card_frames:
             card = self.card_frames["Total Return"]
-            if pct > 12:   card.configure(bootstyle="success")
-            elif pct > 4:  card.configure(bootstyle="info")
-            elif pct > -4: card.configure(bootstyle="secondary")
-            elif pct > -12:card.configure(bootstyle="warning")
-            else:          card.configure(bootstyle="danger")
-
-        self.card_vars["TTM Dividends"].set(f"£{round_money(s['ttm_dividends']):,.2f}")
-        self.card_vars["Realised P/L"].set(f"£{round_money(s['realised_pl']):+,.2f}")
-        self.card_vars["Fees Paid"].set(f"£{round_money(s['fees']):,.2f}")
-
-        # ── Sidebar stats (unchanged)
+            if pct > 12:    card.configure(bootstyle="success")
+            elif pct > 4:   card.configure(bootstyle="info")
+            elif pct > -4:  card.configure(bootstyle="secondary")
+            elif pct > -12: card.configure(bootstyle="warning")
+            else:           card.configure(bootstyle="danger")
+        
+        self.card_vars["TTM Dividends"].set(
+            f"£{round_money(s['ttm_dividends']):,.2f}"
+        )
+        
+        # Realised P/L – no forced +, direction via color if you style card
+        self.card_vars["Realised P/L"].set(
+            self.format_money(s['realised_pl'], force_sign=False)
+        )
+        
+        self.card_vars["Fees Paid"].set(
+            f"£{round_money(s['fees']):,.2f}"
+        )
+        
+        # ── Sidebar stats
         self.stats_vars["# Positions"].set(f"{num_pos}")
         self.stats_vars["Avg Position"].set(f"£{round_money(avg_pos):,.0f}")
         self.stats_vars["Cash %"].set(f"{cash_pct:.1f}%")
@@ -994,13 +1036,15 @@ class Trading212App:
         self.stats_vars["Deposits Count"].set(f"{s.get('deposit_count', 0):,d}")
         self.stats_vars["Market Buys"].set(f"{buy_count:,d}")
         self.stats_vars["Market Sells"].set(f"{sell_count:,d}")
-        sign = "+" if net_gain >= 0 else ""
-        self.stats_vars["Net Gain £"].set(f"{sign}£{round_money(net_gain):,.2f}")
-
+        
+        self.stats_vars["Net Gain £"].set(
+            self.format_money(net_gain, force_sign=True)   # many prefer + here
+        )
+        
         if "Net Gain £" in self.stats_labels:
             lbl = self.stats_labels["Net Gain £"]
             lbl.configure(foreground="#90EE90" if net_gain > 0 else "#FF9999" if net_gain < 0 else "white")
-
+        
         # ── Warnings (unchanged)
         warnings = []
         min_ago = (time.time() - self.last_successful_refresh) / 60 if self.last_successful_refresh else 999
@@ -1010,16 +1054,16 @@ class Trading212App:
         if max_pct > CONCENTRATION_THRESHOLD_PCT:
             warnings.append(f"Concentration risk: {max_pct:.1f}% in largest position")
         self.warning_var.set(" • ".join(warnings) if warnings else "")
-
-        # ── Skip chart rendering if no matplotlib or no positions
+        
+        # ── Charts
         if not MATPLOTLIB or not self.positions:
             return
-
+        
         self.ax1.clear()
         self.ax2.clear()
         self.ax3.clear()
         self.ax4.clear()
-
+        
         active = [p for p in self.positions if p.est_value > 0 and p.quantity > 0]
         if not active:
             for ax, title in zip([self.ax1, self.ax2, self.ax3, self.ax4],
@@ -1028,30 +1072,31 @@ class Trading212App:
                 ax.text(0.5, 0.5, title, ha='center', va='center', color='gray', fontsize=12)
             self.canvas.draw()
             return
-
+        
         sorted_active = sorted(active, key=lambda x: -x.est_value)
-
-        # ── Panel 1: Position values + return % labels
+        
+        # ── Panel 1: Position Values
         show_count = min(MAX_BAR_TICKERS, len(sorted_active))
         tickers = [p.ticker for p in sorted_active[:show_count]]
         values = [p.est_value for p in sorted_active[:show_count]]
         colors = ['#66BB6A' if p.unrealised_pl >= 0 else '#EF5350' for p in sorted_active[:show_count]]
-
+        
         bars = self.ax1.bar(tickers, values, color=colors, edgecolor='gray', linewidth=0.7)
         self.ax1.tick_params(axis='x', rotation=55, labelsize=9.5)
         self.ax1.set_title(f"Position Values – Top {show_count}", fontsize=13, pad=10)
-
-        # Labels on bars – FIXED
+        
         for bar, pos in zip(bars, sorted_active[:show_count]):
             height = bar.get_height()
             ret_pct = (pos.unrealised_pl / pos.total_cost * 100) if pos.total_cost > 0 else 0
             
-            label = f"{self.smart_pnl_label(height)}\n{ret_pct:+.1f}%"
-            color = '#4CAF50' if height >= 0 else '#EF5350'
-
+            # Clean: no sign on position value, sign only on negative pct
+            label = f"{self.format_money(height, decimals=2, force_sign=False)}\n" \
+                    f"{self.format_pct(ret_pct, decimals=1, always_show_sign=False)}"
+            
+            color = '#4CAF50' if pos.unrealised_pl >= 0 else '#EF5350'
             va = 'bottom' if height >= 0 else 'top'
             offset = height * 0.015 if height >= 0 else height * -0.015
-
+            
             self.ax1.text(
                 bar.get_x() + bar.get_width()/2,
                 height + offset,
@@ -1061,24 +1106,25 @@ class Trading212App:
                 fontweight='bold',
                 bbox=dict(facecolor='black', alpha=0.55, pad=1.6, lw=0)
             )
-
-        # ── Panel 2: Top allocation (horizontal) – unchanged
+        
+        # ── Panel 2: Allocation (unchanged)
         alloc_sorted = sorted(active, key=lambda x: -x.portfolio_pct)[:12]
         alloc_labels = [p.ticker for p in alloc_sorted]
         alloc_sizes = [p.portfolio_pct for p in alloc_sorted]
-
+        
         self.ax2.barh(alloc_labels[::-1], alloc_sizes[::-1],
                       color=plt.cm.tab20b(np.linspace(0.1, 0.9, len(alloc_labels))))
         self.ax2.set_title("Top 12 Allocation (%)", fontsize=13, pad=10)
         self.ax2.invert_yaxis()
         self.ax2.set_xlim(0, max(alloc_sizes + [1]) * 1.18)
-
+        
         for i, val in enumerate(alloc_sizes[::-1]):
             self.ax2.text(val + 0.4, i, f"{val:.1f}%", va='center', fontsize=9.5, color='white')
-
-        # ── Panel 3: Top winners – FIXED labels
+        
+        # ── Panel 3: Top Winners
         winners = sorted([p for p in active if p.unrealised_pl > 0],
                          key=lambda x: -x.unrealised_pl)[:5]
+        
         if winners:
             win_tickers = [p.ticker for p in winners]
             win_pl = [p.unrealised_pl for p in winners]
@@ -1086,25 +1132,26 @@ class Trading212App:
             self.ax3.set_title("Top 5 Winners (£)", fontsize=12.5, pad=10)
             self.ax3.invert_yaxis()
             max_win = max(win_pl, default=1)
-
+            
             for i, v in enumerate(win_pl[::-1]):
                 self.ax3.text(
                     v + max_win * 0.02,
                     i,
-                    self.smart_pnl_label(v),
+                    self.format_money(v, force_sign=False),  # or True if you want +
                     va='center',
                     fontsize=9.5,
-                    color='#4CAF50'   # green
+                    color='#4CAF50'
                 )
         else:
             self.ax3.text(0.5, 0.5, "No positions\ncurrently in profit",
                           ha='center', va='center', color='#777777', fontsize=11,
                           fontstyle='italic')
             self.ax3.set_title("Top Winners", fontsize=12.5, pad=10)
-
-        # ── Panel 4: Top losers – FIXED labels
+        
+        # ── Panel 4: Top Losers
         losers = sorted([p for p in active if p.unrealised_pl < 0],
                         key=lambda x: x.unrealised_pl)[:5]
+        
         if losers:
             lose_tickers = [p.ticker for p in losers]
             lose_pl = [p.unrealised_pl for p in losers]
@@ -1112,22 +1159,22 @@ class Trading212App:
             self.ax4.set_title("Top 5 Losers (£)", fontsize=12.5, pad=10)
             self.ax4.invert_yaxis()
             max_lose = min(lose_pl, default=-1)
-
+            
             for i, v in enumerate(lose_pl[::-1]):
                 self.ax4.text(
                     v - abs(max_lose) * 0.02,
                     i,
-                    self.smart_pnl_label(v),
+                    self.format_money(v, force_sign=False),  # negative → shows -
                     va='center',
                     fontsize=9.5,
-                    color='white'   # red
+                    color='white'
                 )
         else:
             self.ax4.text(0.5, 0.5, "No positions\ncurrently in loss",
                           ha='center', va='center', color='#777777', fontsize=11,
                           fontstyle='italic')
             self.ax4.set_title("Top Losers", fontsize=12.5, pad=10)
-
+        
         self.canvas.draw()
 
     # ────────────────────────────────────────────────
